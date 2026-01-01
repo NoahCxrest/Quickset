@@ -3,12 +3,14 @@ FROM rust:1.75-slim AS builder
 
 WORKDIR /app
 
-# copy everything we need for the build
+# copy source
 COPY Cargo.toml Cargo.lock* ./
 COPY src ./src
-COPY benches ./benches
 
-# build for release (benches are optional, only main binary matters)
+# create dummy bench file so cargo doesn't complain
+RUN mkdir -p benches && echo "fn main() {}" > benches/search_benchmarks.rs
+
+# build for release
 RUN cargo build --release --bin quickset
 
 # runtime stage - small as fuck
