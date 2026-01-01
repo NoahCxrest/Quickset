@@ -353,6 +353,10 @@ fn route_request(
             if let Err(e) = check_auth(request, &auth, auth_level, false, false) { return e; }
             handle_list_tables(db)
         }
+        ("POST", "/describe") => {
+            if let Err(e) = check_auth(request, &auth, auth_level, false, false) { return e; }
+            handle_describe(request, db)
+        }
         ("GET", "/stats") => {
             if let Err(e) = check_auth(request, &auth, auth_level, false, false) { return e; }
             handle_stats(db)
@@ -474,6 +478,41 @@ fn handle_list_tables(db: Arc<RwLock<Database>>) -> (u16, String) {
     let db = db.read().unwrap();
     let tables: Vec<&str> = db.table_names();
     (200, serde_json::to_string(&ApiResponse::ok(tables)).unwrap())
+}
+
+fn handle_describe(request: &HttpRequest, db: Arc<RwLock<Database>>) -> (u16, String) {
+    use serde::{Deserialize, Serialize};
+    
+    #[derive(Deserialize)]
+    struct DescribeRequest { table: String }
+    #[derive(Serialize)]
+    struct ColumnInfo { name: String, column_type: String }
+    #[derive(Serialize)]
+    struct DescribeResponse { table: String, columns: Vec<ColumnInfo>, row_count: usize }
+
+    let req: DescribeRequest = match serde_json::from_slice(&request.body) {
+        Ok(r) => r,
+        Err(e) => return (400, serde_json::to_string(&ApiResponse::<()>::err(&e.to_string())).unwrap()),
+    };
+
+    let db = db.read().unwrap();
+    let table = match db.get_table(&req.table) {
+        Some(t) => t,
+        None => return (404, serde_json::to_string(&ApiResponse::<()>::err("table not found")).unwrap()),
+    };
+
+    let columns: Vec<ColumnInfo> = table.columns().iter().map(|c| ColumnInfo {
+        name: c.name.to_string(),
+        column_type: format!("{:?}", c.col_type),
+    }).collect();
+
+    let resp = DescribeResponse {
+        table: req.table,
+        columns,
+        row_count: table.len(),
+    };
+
+    (200, serde_json::to_string(&ApiResponse::ok(resp)).unwrap())
 }
 
 fn handle_stats(db: Arc<RwLock<Database>>) -> (u16, String) {
