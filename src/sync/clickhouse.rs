@@ -7,6 +7,7 @@ use std::time::Duration;
 
 use crate::storage::Value;
 use crate::table::ColumnType;
+use crate::{log_debug, log_info};
 
 use super::source::{FetchResult, Source, SourceConfig, SourceError, SyncTable};
 
@@ -228,7 +229,11 @@ impl Source for ClickHouseSource {
 
     fn fetch_table(&self, table: &SyncTable) -> Result<FetchResult, SourceError> {
         let query = self.build_query(table);
+        log_info!("sync", "executing query: {}", query);
         let response = self.execute_query(&query)?;
+        // log first 500 chars of response for debugging
+        let preview: String = response.chars().take(500).collect();
+        log_debug!("sync", "response preview: {}", preview);
         let rows = self.parse_response(&response, table)?;
         let row_count = rows.len();
         
