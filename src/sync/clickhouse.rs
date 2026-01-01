@@ -1,7 +1,7 @@
 // clickhouse source implementation
 // uses native http interface for simplicity (no extra deps)
 
-use std::io::{BufRead, BufReader, Write};
+use std::io::{BufRead, BufReader, Read, Write};
 use std::net::TcpStream;
 use std::time::Duration;
 
@@ -112,27 +112,64 @@ impl ClickHouseSource {
             return Err(SourceError::Query(format!("clickhouse error: {} {}", status_line.trim(), error_body.trim())));
         }
 
-        // skip headers until empty line
+        // parse headers to check for chunked encoding
+        let mut chunked = false;
+        let mut content_length: Option<usize> = None;
         loop {
             let mut line = String::new();
             reader.read_line(&mut line)
                 .map_err(|e| SourceError::Query(e.to_string()))?;
+            let line_lower = line.to_lowercase();
+            if line_lower.starts_with("transfer-encoding:") && line_lower.contains("chunked") {
+                chunked = true;
+            }
+            if line_lower.starts_with("content-length:") {
+                content_length = line.split(':').nth(1).and_then(|s| s.trim().parse().ok());
+            }
             if line.trim().is_empty() {
                 break;
             }
         }
 
-        // read body
-        reader.read_line(&mut response)
-            .map_err(|e| SourceError::Query(format!("failed to read body: {}", e)))?;
-        
-        // read remaining lines
-        loop {
-            let mut line = String::new();
-            match reader.read_line(&mut line) {
-                Ok(0) => break,
-                Ok(_) => response.push_str(&line),
-                Err(_) => break,
+        // read body based on encoding
+        if chunked {
+            // chunked transfer encoding
+            loop {
+                let mut size_line = String::new();
+                reader.read_line(&mut size_line)
+                    .map_err(|e| SourceError::Query(e.to_string()))?;
+                
+                // parse hex chunk size
+                let size = usize::from_str_radix(size_line.trim(), 16).unwrap_or(0);
+                if size == 0 {
+                    break; // end of chunks
+                }
+                
+                // read chunk data
+                let mut chunk = vec![0u8; size];
+                reader.read_exact(&mut chunk)
+                    .map_err(|e| SourceError::Query(e.to_string()))?;
+                response.push_str(&String::from_utf8_lossy(&chunk));
+                
+                // read trailing \r\n after chunk
+                let mut crlf = String::new();
+                let _ = reader.read_line(&mut crlf);
+            }
+        } else if let Some(len) = content_length {
+            // content-length based
+            let mut body = vec![0u8; len];
+            reader.read_exact(&mut body)
+                .map_err(|e| SourceError::Query(e.to_string()))?;
+            response = String::from_utf8_lossy(&body).to_string();
+        } else {
+            // read until connection close
+            loop {
+                let mut line = String::new();
+                match reader.read_line(&mut line) {
+                    Ok(0) => break,
+                    Ok(_) => response.push_str(&line),
+                    Err(_) => break,
+                }
             }
         }
 
