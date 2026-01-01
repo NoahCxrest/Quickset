@@ -221,25 +221,26 @@ impl ClickHouseSource {
 
             let fields: Vec<&str> = line.split('\t').collect();
             
-            if fields.len() != table.columns.len() && !table.columns.is_empty() {
-                // if no columns specified, try to parse anyway
-                if table.columns.is_empty() {
-                    let row: Vec<Value> = fields.iter()
-                        .map(|f| Value::String((*f).to_string().into_boxed_str()))
-                        .collect();
-                    rows.push(row);
-                    continue;
-                }
-                return Err(SourceError::Parse(format!(
-                    "column count mismatch: expected {}, got {}",
-                    table.columns.len(), fields.len()
-                )));
+            // handle column count mismatches gracefully
+            if table.columns.is_empty() {
+                // no columns specified, parse all as strings
+                let row: Vec<Value> = fields.iter()
+                    .map(|f| Value::String((*f).to_string().into_boxed_str()))
+                    .collect();
+                rows.push(row);
+                continue;
             }
 
-            let row: Vec<Value> = fields.iter()
-                .zip(table.columns.iter())
-                .map(|(field, col)| Self::parse_value(field, col.col_type))
-                .collect();
+            // build row, padding with Null if fewer fields than expected
+            let mut row: Vec<Value> = Vec::with_capacity(table.columns.len());
+            for (i, col) in table.columns.iter().enumerate() {
+                let value = if i < fields.len() {
+                    Self::parse_value(fields[i], col.col_type)
+                } else {
+                    Value::Null // missing columns become Null
+                };
+                row.push(value);
+            }
             
             rows.push(row);
         }
