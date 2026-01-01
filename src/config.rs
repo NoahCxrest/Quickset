@@ -127,8 +127,10 @@ impl SyncSourceConfig {
                 .ok()
                 .and_then(|s| s.parse().ok())
                 .unwrap_or(300), // default 5 minutes
+            // use semicolon to separate tables since comma is used for columns
+            // format: "table1:target1:col=type,col2=type2;table2:target2:..."
             tables: std::env::var("QUICKSET_SYNC_TABLES")
-                .map(|s| s.split(',').map(|t| t.trim().to_string()).collect())
+                .map(|s| s.split(';').map(|t| t.trim().to_string()).collect())
                 .unwrap_or_default(),
         }
     }
