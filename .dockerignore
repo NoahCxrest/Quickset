@@ -1,0 +1,11 @@
+target/
+Cargo.lock
+*.swp
+*.swo
+.git/
+.gitignore
+.dockerignore
+README.md
+examples/
+benches/
+tests/
