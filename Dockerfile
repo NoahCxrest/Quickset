@@ -8,8 +8,8 @@ COPY Cargo.toml Cargo.lock* ./
 COPY src ./src
 COPY benches ./benches
 
-# build for release
-RUN cargo build --release
+# build for release (benches are optional, only main binary matters)
+RUN cargo build --release --bin quickset
 
 # runtime stage - small as fuck
 FROM debian:bookworm-slim

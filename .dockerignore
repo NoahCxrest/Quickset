@@ -7,5 +7,4 @@ Cargo.lock
 .dockerignore
 README.md
 examples/
-benches/
 tests/
